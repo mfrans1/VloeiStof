@@ -8,7 +8,7 @@ def pressure_poisson_jacobi(p: NDArray,
 							RHS: NDArray, 
 							rtol: float = 1.e-5, 
 							logs: bool = False) -> NDArray:
-	"""Solve the pressure poisson equation (PPE) using jacobi iterative
+	"""Solve the pressure poisson equation using jacobi iterative
 	method, assuming a horizontal and vertical resolution of dx and dy 
 	respectively. Using right hand side given as RHS, and assuming 
 	NEUMANN conditions at the boundaries.
@@ -57,11 +57,66 @@ def pressure_poisson_jacobi(p: NDArray,
 
 	return p
 
-def calculate_ppm_RHS_central():
-	None
+def calculate_ppm_RHS_central(rho: float, 
+                              u: NDArray, 
+							  v: NDArray, 
+							  RHS: NDArray, 
+							  dt: float, 
+							  dx: float, 
+							  dy: float)->NDArray:
+	"""Central difference scheme for the right
+	hand side terms of the Navier Stokes equations,
+	this becomes the RHS of the poisson jacobi
+	method. Constructed from derivatives of velocity
 
-def project_velocity():
-	None
+	Args:
+		rho (float): fluid density
+		u (NDArray): fluid u-velocity
+		v (NDArray): fluid v-velocity
+		RHS (NDArray): right hand side
+		dt (float): time step
+		dx (float): resolution x-dimension
+		dy (float): resolution y-dimension
+
+	Returns:
+		NDArray: spatial derivative RHS of velocities
+	"""
+	RHS[1:-1, 1:-1] = rho * (
+		(1.0/dt) * ((u[2:, 1:-1] - u[:-2, 1:-1]) / (2*dx)
+		            (v[1:-1, 2:] - v[1:-1, :-2]) / (2*dy))
+	)
+
+	return RHS
+
+def project_velocity(rho: float,
+                     u: NDArray, 
+					 v: NDArray,
+					 dt: float,
+					 dx: float,
+					 dy: float,
+					 p: NDArray)->tuple[NDArray, NDArray]:
+	"""Velocity update to guarantee non-divergence with new 
+	pressure field calculated by pressure_poisson_jacobi.
+
+	Args:
+
+	Returns:
+
+	"""
+	u[1:-1, 1:-1] = u[1:-1, 1:-1] - dt * (1/rho) * (
+		(p[2:, 1:-1] - p[:-2, 1:-1])/(2*dx)
+	)
+	v[1:-1, 1:-1] = v[1:-1, 1:-1] - dt * (1/rho) * (
+		(p[1:-1, 2:] - p[1:-1, :-2])/(2*dy)
+	)
+
+	# apply boundary conditions
+	u[0, :], u[-1, :] = 0, 0
+	u[:, 0], u[:, -1] = 0, 0
+	v[0, :], v[-1, :] = 0, 0
+	v[:, 0], v[:, -1] = 0, 0
+
+	return u, v
 
 def calculate_intermediate_velocity():
 	None
