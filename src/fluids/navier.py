@@ -8,9 +8,10 @@ def pressure_poisson_jacobi(p: NDArray,
 							RHS: NDArray, 
 							rtol: float = 1.e-5, 
 							logs: bool = False) -> NDArray:
-	"""Solve the pressure Poisson equation using Jacobi iteration.
-
-    Assumes Neumann boundary conditions on all edges of the mesh.
+	"""Solve the pressure poisson equation (PPE) using jacobi iterative
+	method, assuming a horizontal and vertical resolution of dx and dy 
+	respectively. Using right hand side given as RHS, and assuming 
+	NEUMANN conditions at the boundaries.
 
     Args:
         p (NDArray): Initial pressure field.

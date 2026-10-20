@@ -5,6 +5,7 @@ description = "A 2D incompressible Navier-Stokes solver"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "ipykernel>=7.4.0",
     "jax",
     "matplotlib",
     "numpy",
