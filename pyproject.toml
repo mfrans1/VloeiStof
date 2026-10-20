@@ -1,0 +1,33 @@
+[project]
+name = "fluids"
+version = "0.1.0"
+description = "A 2D incompressible Navier-Stokes solver"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "jax",
+    "matplotlib",
+    "numpy",
+    "scipy",
+]
+
+[project.scripts]
+fluids = "fluids.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.3,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
