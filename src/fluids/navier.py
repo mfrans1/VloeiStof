@@ -81,10 +81,9 @@ def calculate_ppm_RHS_central(rho: float,
 	Returns:
 		NDArray: spatial derivative RHS of velocities
 	"""
-	RHS[1:-1, 1:-1] = rho * (
-		(1.0/dt) * ((u[2:, 1:-1] - u[:-2, 1:-1]) / (2*dx)
-		            (v[1:-1, 2:] - v[1:-1, :-2]) / (2*dy))
-	)
+	RHS[1:-1, 1:-1] = (rho/dt) * (
+		(u[2:, 1:-1] - u[:-2, 1:-1]) / (2*dx) + (v[1:-1, 2:] - v[1:-1, :-2]) / (2*dy)
+		)
 
 	return RHS
 
@@ -190,5 +189,80 @@ def calculate_intermediate_velocity(nu: float,
 
 	return u, v
 
-def solve_NS():
-	None
+def solve_NS(u: NDArray,
+             v: NDArray,
+			 p: NDArray,
+			 rho: float,
+			 nu: float,
+			 dt: float,
+			 t_end: float,
+			 dx: float,
+			 dy: float,
+			 logs: bool = False)->tuple[NDArray, NDArray, NDArray]:
+    """Solve the incompressible Navier-Stokes equations
+
+	Args:
+		u (NDArray): u-velocity 
+		v (NDArray): v-velocity
+		p (NDArray): pressure field
+		rho (float): fluid density
+		nu (float): fluid diffusivity
+		dt (float): time step
+		t_end (float): end of integration
+		dx (float): x-dimension resolution
+		dy (float): y-dimension resolution
+		logs (bool): logging flag
+
+	Returns:
+		tuple(NDArray, NDArray, NDArray): u-, v-velocity and pressure field
+    """
+    t = 0
+    
+    u_old = u.copy()
+    v_old = v.copy()
+    p_RHS = np.zeros_like(u)
+    
+    while t < t_end:
+        t += dt
+
+        if logs: print('\nTime = {:.8f}'.format(t))
+            
+        # calculate intermediate velocities
+        u, v = calculate_intermediate_velocity(nu, u, v, u_old, v_old, dt, dx, dy)
+
+        # calculate RHS for the pressure Poisson problem
+        p_RHS = calculate_ppm_RHS_central(rho, u, v, p_RHS, dt, dx, dy)
+
+        # compute pressure - note that we use the previous p as an initial guess to the solution
+        p = pressure_poisson_jacobi(p, dx, dy, p_RHS, 1.e-5, logs)
+
+        # project velocity
+        u, v = project_velocity(rho, u, v, dt, dx, dy, p)
+        
+        if logs:
+            print('norm(u) = {0:.8f}, norm(v) = {1:.8f}'.format(sl.norm(u),sl.norm(v)))
+            print('Courant number: {0:.8f}'.format(np.max(np.sqrt(u**2+v**2)) * dt / min(dx,dy)))
+                
+        # if the residuals in velocities between new and old are sufficiently small, 
+        # we can say we have reached steady state, as needed
+        res_u = np.linalg.norm(u - u_old) / (np.linalg.norm(u) + 1e-10)
+        res_v = np.linalg.norm(v - v_old) / (np.linalg.norm(v) + 1e-10)
+        if logs:
+            print(f"velocity residual = {res_u + res_v}")
+
+        if np.sqrt(res_u**2 + res_v**2) < 1e-7:
+            print(f"Flow achieved steady state at t = {t:.2f}s")
+            print(f"velocity residual = {res_u + res_v}")
+            print('norm(u) = {0:.8f}, norm(v) = {1:.8f}'.format(sl.norm(u),sl.norm(v)))
+            print('Courant number: {0:.8f}'.format(np.max(np.sqrt(u**2+v**2)) * dt / min(dx,dy)))
+            break
+        
+        #swap pointers without copying data
+        temp = u_old
+        u_old = u
+        u = temp
+
+        temp = v_old
+        v_old = v
+        v = temp
+    return u, v, p
