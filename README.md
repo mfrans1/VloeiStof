@@ -1,3 +1,5 @@
+![Python](https://img.shields.io/badge/python-3.6-blue.svg)
+
 # Fluids
 
 This is a repository for developing a simple 2-D navier stokes solver in python using JAX. The idea is to address that languages like FORTAN or C++ are hard to use and python is slow so... maybe this will be good? 
