@@ -1,5 +1,7 @@
 import numpy as np
+
 from fluids.navier import pressure_poisson_jacobi
+
 
 def test_zero_rhs():
     """A zero RHS and zero initial pressure should return zero pressure."""
