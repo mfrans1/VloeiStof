@@ -1,4 +1,5 @@
-![Python](https://img.shields.io/badge/python-3.6-blue.svg)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 # Fluids
 
@@ -8,4 +9,4 @@ Starting off with a super simple case, hopefully this will grow into something m
 
 In the meantime, I know a lot of the numerics is probably not the most efficeint or robust, but im doing them myself so cut me some slack. 
 
-
+Look at what im working on currently for this project through issues. 
