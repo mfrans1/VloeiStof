@@ -2,100 +2,112 @@ import numpy as np
 import scipy.linalg as sl
 from numpy.typing import NDArray
 
-class Navier:
-	def __init__(self, Pmax, p, u, v, nu, rho, Lx, Ly, Nx, Ny, courant_max=0.005):
-		# setting the grid variables
-		self.p = p
-		self.u = u
-		self.v = v
-		
-		# setting fluid characteristics
-		self.nu = nu
-		self.rho = rho
-		
-		# setting problem dimensions
-		self.Lx = Lx
-		self.Ly = Ly
-		self.Nx = Nx	
-		self.Ny = Ny
-		self.dt
 
-		# deriving resolution and 
-		self.dx = Lx / (Nx - 1)
-		self.dy = Ly / (Ny - 1)
-
-		# calculate theoretical max velocity to inform timestep
-		v_max = Pmax * max(Lx,Ly)**2 / (8*rho*nu*min(Lx,Ly))
-
-		# set the timestep using the CFL condition based on v_max
-		self.dt = courant_max * min(self.dx, self.dy) / v_max
-		
-	
-
-
-def pressure_poisson_jacobi(
-    p: NDArray,
-    dx: float,
-    dy: float,
-    RHS: NDArray,
-    rtol: float = 1.0e-5,
-    logs: bool = False,
-) -> NDArray:
-    """Solve the pressure poisson equation using jacobi iterative
-    method, assuming a horizontal and vertical resolution of dx and dy
-    respectively. Using right hand side given as RHS, and assuming
-    NEUMANN conditions at the boundaries.
-
-    Args:
-        p (NDArray): Initial pressure field.
-        dx (float): Grid spacing in the x direction.
-        dy (float): Grid spacing in the y direction.
-        rhs (NDArray): Right-hand side of the Poisson equation.
-        rtol (float): Relative convergence tolerance. Defaults to 1e-5.
-        logs (bool): Whether to log solver progress. Defaults to False.
-
-    Returns:
-        NDArray: Pressure field after the Jacobi iterations converge.
+class NavierStokesSolver:
+    """Class for solving the 2D incompressible navier stokes equations for a given
+    sized domain. Resolution defined by the user and informs the timestep using
+    the courant friedrich lewy condition. 
     """
+    def __init__(self,
+        Pmax: float,
+        p: NDArray,
+        u:NDArray,
+        v:NDArray,
+        nu:float,
+        rho:float,
+        Lx:float,
+        Ly: float,
+        Nx:int,	
+        Ny:int,	
+        courant_max:float=0.005, 
+        rtol:float=1e-5,
+        logs:bool=False
+    ):
+        """Initialize the solver with parameters. """
+        # setting external params
+        self.rtol = rtol
+        self.logs = logs
 
-    tol = 10.0 * rtol
+        # setting the grid variables
+        self.p = p
+        self.u = u
+        self.v = v
+        
+        # setting fluid characteristics
+        self.nu = nu
+        self.rho = rho
+        
+        # setting problem dimensions
+        self.Lx = Lx
+        self.Ly = Ly
+        self.Nx = Nx	
+        self.Ny = Ny
 
-    itrs = 0  # iterations counter
+        # deriving resolution and 
+        self.dx = Lx / (Nx - 1)
+        self.dy = Ly / (Ny - 1)
 
-    p_old = np.copy(p)  # deep copy
+        # calculate theoretical max velocity to inform timestep
+        v_max = Pmax * max(Lx,Ly)**2 / (8*rho*nu*min(Lx,Ly))
 
-    while tol > rtol:
-        itrs += 1
+        # set the timestep using the CFL condition based on v_max
+        self.dt = courant_max * min(self.dx, self.dy) / v_max
+        
 
-        # swap the arrays
-        temp = p_old
-        p_old = p
-        p = temp
+    def pressure_poisson_jacobi(
+        self,
+        RHS: NDArray
+    ) -> NDArray:
+        """Solve the pressure poisson equation using jacobi iterative
+        method, assuming a horizontal and vertical resolution of dx and dy
+        respectively. Using right hand side given as RHS, and assuming
+        NEUMANN conditions at the boundaries.
 
-        # discretized jacobi solver
-        p[1:-1, 1:-1] = (
-            1.0
-            / (2.0 + 2.0 * (dx**2) / (dy**2))
-            * (
-                p_old[2:, 1:-1]
-                + p_old[:-2, 1:-1]
-                + (p_old[1:-1, 2:] + p_old[1:-1, :-2]) * (dx**2) / (dy**2)
-                - (dx**2) * RHS[1:-1, 1:-1]
+        Args:
+            RHS (NDArray): Right hand side of the equation
+        Returns:
+            NDArray: Pressure field after the Jacobi iterations converge.
+        """
+
+        tol = 10.0 * self.rtol
+
+        itrs = 0  # iterations counter
+
+        p_old = np.copy(self.p)  # deep copy
+
+        while tol > self.rtol:
+            itrs += 1
+
+            # swap the arrays
+            temp = p_old
+            p_old = self.p
+            self.p = temp
+
+            # discretized jacobi solver
+            self.p[1:-1, 1:-1] = (
+                1.0
+                / (2.0 + 2.0 * (self.dx**2) / (self.dy**2))
+                * (
+                    p_old[2:, 1:-1]
+                    + p_old[:-2, 1:-1]
+                    + (p_old[1:-1, 2:] + p_old[1:-1, :-2]) * (self.dx**2) / (self.dy**2)
+                    - (self.dx**2) * RHS[1:-1, 1:-1]
+                )
             )
-        )
 
-        # reinforce neumann conditions
-        p[0, :] = p[1, :]  # left
-        p[-1, :] = p[-2, :]  # right
-        p[:, 0] = p[:, 1]  # bottom
-        p[:, -1] = p[:, -2]  # top
+            # reinforce neumann conditions
+            self.p[0, :] = self.p[1, :]  # left
+            self.p[-1, :] = self.p[-2, :]  # right
+            self.p[:, 0] = self.p[:, 1]  # bottom
+            self.p[:, -1] = self.p[:, -2]  # top
 
-        tol = sl.norm(p - p_old) / np.maximum(1.0e-10, sl.norm(p))
+            tol = sl.norm(self.p - p_old) / np.maximum(1.0e-10, sl.norm(self.p))
 
-    if logs:
-        print(f"PPE solve iterations = {itrs:4d}")
+        if self.logs:
+            print(f"PPE solve iterations = {itrs:4d}")
 
-    return p
+        return self.p
+
 
 
 def calculate_ppm_RHS_central(
