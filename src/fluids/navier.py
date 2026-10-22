@@ -2,6 +2,36 @@ import numpy as np
 import scipy.linalg as sl
 from numpy.typing import NDArray
 
+class Navier:
+	def __init__(self, Pmax, p, u, v, nu, rho, Lx, Ly, Nx, Ny, courant_max=0.005):
+		# setting the grid variables
+		self.p = p
+		self.u = u
+		self.v = v
+		
+		# setting fluid characteristics
+		self.nu = nu
+		self.rho = rho
+		
+		# setting problem dimensions
+		self.Lx = Lx
+		self.Ly = Ly
+		self.Nx = Nx	
+		self.Ny = Ny
+		self.dt
+
+		# deriving resolution and 
+		self.dx = Lx / (Nx - 1)
+		self.dy = Ly / (Ny - 1)
+
+		# calculate theoretical max velocity to inform timestep
+		v_max = Pmax * max(Lx,Ly)**2 / (8*rho*nu*min(Lx,Ly))
+
+		# set the timestep using the CFL condition based on v_max
+		self.dt = courant_max * min(self.dx, self.dy) / v_max
+		
+	
+
 
 def pressure_poisson_jacobi(
     p: NDArray,
