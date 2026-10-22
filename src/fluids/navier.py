@@ -6,24 +6,26 @@ from numpy.typing import NDArray
 class NavierStokesSolver:
     """Class for solving the 2D incompressible navier stokes equations for a given
     sized domain. Resolution defined by the user and informs the timestep using
-    the courant friedrich lewy condition. 
+    the courant friedrich lewy condition.
     """
-    def __init__(self,
+
+    def __init__(
+        self,
         Pmax: float,
         p: NDArray,
-        u:NDArray,
-        v:NDArray,
-        nu:float,
-        rho:float,
-        Lx:float,
+        u: NDArray,
+        v: NDArray,
+        nu: float,
+        rho: float,
+        Lx: float,
         Ly: float,
-        Nx:int,	
-        Ny:int,	
-        courant_max:float=0.005, 
-        rtol:float=1e-5,
-        logs:bool=False
+        Nx: int,
+        Ny: int,
+        courant_max: float = 0.005,
+        rtol: float = 1e-5,
+        logs: bool = False,
     ):
-        """Initialize the solver with parameters. """
+        """Initialize the solver with parameters."""
         # setting external params
         self.rtol = rtol
         self.logs = logs
@@ -32,32 +34,36 @@ class NavierStokesSolver:
         self.p = p
         self.u = u
         self.v = v
-        
+
         # setting fluid characteristics
         self.nu = nu
         self.rho = rho
-        
+
         # setting problem dimensions
         self.Lx = Lx
         self.Ly = Ly
-        self.Nx = Nx	
+        self.Nx = Nx
         self.Ny = Ny
 
-        # deriving resolution and 
+        # deriving resolution and
         self.dx = Lx / (Nx - 1)
         self.dy = Ly / (Ny - 1)
 
         # calculate theoretical max velocity to inform timestep
-        v_max = Pmax * max(Lx,Ly)**2 / (8*rho*nu*min(Lx,Ly))
+        v_max = Pmax * max(Lx, Ly) ** 2 / (8 * rho * nu * min(Lx, Ly))
 
         # set the timestep using the CFL condition based on v_max
         self.dt = courant_max * min(self.dx, self.dy) / v_max
-        
 
-    def pressure_poisson_jacobi(
-        self,
-        RHS: NDArray
-    ) -> NDArray:
+    def calculate_courant_number(self) -> float:
+        """Calculate the courant number for the current velocity field.
+
+        Returns:
+            float: Courant number
+        """
+        return np.max(np.sqrt(self.u**2 + self.v**2)) * self.dt / min(self.dx, self.dy)
+
+    def pressure_poisson_jacobi(self, RHS: NDArray) -> NDArray:
         """Solve the pressure poisson equation using jacobi iterative
         method, assuming a horizontal and vertical resolution of dx and dy
         respectively. Using right hand side given as RHS, and assuming
@@ -130,8 +136,7 @@ class NavierStokesSolver:
 
         return RHS
 
-    def project_velocity(
-            self) -> tuple[NDArray, NDArray]:
+    def project_velocity(self) -> tuple[NDArray, NDArray]:
         """Velocity update to guarantee non-divergence with new
         pressure field calculated by pressure_poisson_jacobi.
 
@@ -152,7 +157,6 @@ class NavierStokesSolver:
         self.v[:, 0], self.v[:, -1] = 0, 0
 
         return self.u, self.v
-
 
     def calculate_intermediate_velocity(
         self,
@@ -248,29 +252,41 @@ class NavierStokesSolver:
                 print(f"\nTime = {t:.8f}")
 
             # calculate intermediate velocities
-            self.u, self.v = self.calculate_intermediate_velocity(self.nu, self.u, self.v, u_old, v_old, self.dt, self.dx, self.dy)
+            self.u, self.v = self.calculate_intermediate_velocity(
+                self.nu, self.u, self.v, u_old, v_old, self.dt, self.dx, self.dy
+            )
 
             # calculate RHS for the pressure Poisson problem
-            p_RHS = self.calculate_ppm_RHS_central(self.rho, self.u, self.v, p_RHS, self.dt, self.dx, self.dy)
+            p_RHS = self.calculate_ppm_RHS_central(
+                self.rho, self.u, self.v, p_RHS, self.dt, self.dx, self.dy
+            )
 
             # compute pressure
-            p = self.pressure_poisson_jacobi(self.p, self.dx, self.dy, p_RHS, self.rtol, self.logs)
+            self.p = self.pressure_poisson_jacobi(
+                self.p, self.dx, self.dy, p_RHS, self.rtol, self.logs
+            )
 
             # project velocity
-            self.u, self.v = self.project_velocity(self.rho, self.u, self.v, self.dt, self.dx, self.dy, self.p)
+            self.u, self.v = self.project_velocity(
+                self.rho, self.u, self.v, self.dt, self.dx, self.dy, self.p
+            )
 
             if self.logs and output and step % output_freq == 0:
-                print(f"norm(u) = {sl.norm(self.u):.8f}, norm(v) = {sl.norm(self.v):.8f}")
                 print(
-                    f"Courant number: {np.max(np.sqrt(self.u**2 + self.v**2)) * self.dt / min(self.dx, self.dy):.8f}"
+                    f"norm(u) = {sl.norm(self.u):.8f}, norm(v) = {sl.norm(self.v):.8f}"
+                )
+                print(
+                    f"Courant number: {self.calculate_courant_number():.8f}"
                 )
 
                 # save current state to a file
-                np.savez(f"{output_dir}/navier_{step:05d}.npz", u=self.u, v=self.v, p=self.p)
+                np.savez(
+                    f"{output_dir}/navier_{step:05d}.npz", u=self.u, v=self.v, p=self.p
+                )
 
             # if the residuals in velocities between new and old are sufficiently small,
             # we can say we have reached steady state, as needed
-            res_u = np.linalg.norm(self.u - u_old)/ (np.linalg.norm(self.u) + 1e-10)
+            res_u = np.linalg.norm(self.u - u_old) / (np.linalg.norm(self.u) + 1e-10)
             res_v = np.linalg.norm(self.v - v_old) / (np.linalg.norm(self.v) + 1e-10)
             if self.logs:
                 print(f"velocity residual = {res_u + res_v}")
@@ -278,9 +294,11 @@ class NavierStokesSolver:
             if np.sqrt(res_u**2 + res_v**2) < 1e-7:
                 print(f"Flow achieved steady state at t = {t:.2f}s")
                 print(f"velocity residual = {res_u + res_v}")
-                print(f"norm(u) = {sl.norm(self.u):.8f}, norm(v) = {sl.norm(self.v):.8f}")
                 print(
-                    f"Courant number: {np.max(np.sqrt(self.u**2 + self.v**2)) * self.dt / min(self.dx, self.dy):.8f}"
+                    f"norm(u) = {sl.norm(self.u):.8f}, norm(v) = {sl.norm(self.v):.8f}"
+                )
+                print(
+                    f"Courant number: {self.calculate_courant_number():.8f}"
                 )
                 break
 
