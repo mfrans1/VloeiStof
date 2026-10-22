@@ -1,12 +1,54 @@
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-# Fluids
+# VloeiStof
 
-This is a repository for developing a simple 2-D navier stokes solver in python using JAX. The idea is to address that languages like FORTAN or C++ are hard to use and python is slow so... maybe this will be good? 
+*Vloeistof* is Dutch for “fluid.”
 
-Starting off with a super simple case, hopefully this will grow into something more general and useful. Ideally expanding to geophysical fluid dynamics and coupling some heat stuff in there? We'll see how things go with time. 
+VloeiStof is a Python package for simulating two-dimensional incompressible fluid flow. It is an ongoing numerical-modelling project focused on implementing and exploring finite-difference methods for the Navier–Stokes equations. This is still very much a work in progress, check out the issues or releases tab for the most up to date information on the status of the project. 
 
-In the meantime, I know a lot of the numerics is probably not the most efficeint or robust, but im doing them myself so cut me some slack. 
+## Overview
 
-Look at what im working on currently for this project through issues. 
+The solver numerically integrates the incompressible Navier–Stokes equations, coupling the momentum equations with a pressure Poisson equation to enforce mass conservation. Projecting it following the standard Chorin projection method. All grids are collocated, not staggered, so you'll likely get some artifacts when you run simulations. Don't worry, follow a staggered grid like Arakawa C-grid is on the list of stuff to do...
+
+Current features include:
+
+- Finite-difference discretisation of the governing equations.
+- Iterative solution of the pressure Poisson equation using Jacobi iteration.
+- Pressure–velocity projection to enforce incompressibility.
+- Configurable domain dimensions, grid resolution, and fluid properties.
+- Simulation output and visualisation using NumPy and Matplotlib.
+
+## Installation
+
+Requires Python 3.11 or later.
+
+```bash
+git clone <repository-url>
+cd VloeiStof
+python -m pip install -e .
+```
+
+## Usage
+
+For best usage, checkout the `showcase.ipynb` example jupyter notebook in `examples/`.
+
+## Testing
+
+Run the test suite with:
+
+```bash
+pytest
+```
+
+Check code quality with Ruff:
+
+```bash
+ruff check .
+ruff format --check .
+```
+
+## License
+
+This project is released under the MIT License.
+

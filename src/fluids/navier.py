@@ -252,24 +252,16 @@ class NavierStokesSolver:
                 print(f"\nTime = {t:.8f}")
 
             # calculate intermediate velocities
-            self.u, self.v = self.calculate_intermediate_velocity(
-                self.nu, self.u, self.v, u_old, v_old, self.dt, self.dx, self.dy
-            )
+            self.u, self.v = self.calculate_intermediate_velocity(u_old, v_old)
 
             # calculate RHS for the pressure Poisson problem
-            p_RHS = self.calculate_ppm_RHS_central(
-                self.rho, self.u, self.v, p_RHS, self.dt, self.dx, self.dy
-            )
+            p_RHS = self.calculate_ppm_RHS_central(p_RHS)
 
             # compute pressure
-            self.p = self.pressure_poisson_jacobi(
-                self.p, self.dx, self.dy, p_RHS, self.rtol, self.logs
-            )
+            self.p = self.pressure_poisson_jacobi(p_RHS)
 
             # project velocity
-            self.u, self.v = self.project_velocity(
-                self.rho, self.u, self.v, self.dt, self.dx, self.dy, self.p
-            )
+            self.u, self.v = self.project_velocity()
 
             if self.logs and output and step % output_freq == 0:
                 print(
