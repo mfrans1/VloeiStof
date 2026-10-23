@@ -12,6 +12,7 @@ class NavierStokesSolver:
     def __init__(
         self,
         Pmax: float,
+        boundary_mesh: NDArray,
         p: NDArray,
         u: NDArray,
         v: NDArray,
@@ -29,6 +30,9 @@ class NavierStokesSolver:
         # setting external params
         self.rtol = rtol
         self.logs = logs
+
+        # creating the boundary mesh
+        self.boundary_mesh = boundary_mesh
 
         # setting the grid variables
         self.p = p
@@ -102,6 +106,7 @@ class NavierStokesSolver:
             )
 
             # reinforce neumann conditions
+            ''' WE ARE GOING TO HAVE TO CHANGE THIS TO HANDLE BOUNDARIES'''
             self.p[0, :] = self.p[1, :]  # left
             self.p[-1, :] = self.p[-2, :]  # right
             self.p[:, 0] = self.p[:, 1]  # bottom
@@ -151,6 +156,7 @@ class NavierStokesSolver:
         )
 
         # apply boundary conditions
+        ''' WE ARE GOING TO HAVE TO CHANGE THIS TO HANDLE BOUNDARIES'''
         self.u[0, :], self.u[-1, :] = 0, 0
         self.u[:, 0], self.u[:, -1] = 0, 0
         self.v[0, :], self.v[-1, :] = 0, 0
