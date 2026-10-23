@@ -11,8 +11,8 @@ class NavierStokesSolver:
 
     def __init__(
         self,
-        Pmax: float,
         boundary_mesh: NDArray,
+        Pmax: float,
         p: NDArray,
         u: NDArray,
         v: NDArray,
@@ -54,10 +54,8 @@ class NavierStokesSolver:
         self.dy = Ly / (Ny - 1)
 
         # calculate theoretical max velocity to inform timestep
-        v_max = Pmax * max(Lx, Ly) ** 2 / (8 * rho * nu * min(Lx, Ly))
-
-        # set the timestep using the CFL condition based on v_max
-        self.dt = courant_max * min(self.dx, self.dy) / v_max
+        self.v_max = Pmax * (min(Lx, Ly)**2) / (8 * rho * nu * max(Lx, Ly))
+        self.dt = courant_max * min(self.dx, self.dy) / self.v_max
 
     def calculate_courant_number(self) -> float:
         """Calculate the courant number for the current velocity field.
@@ -105,12 +103,11 @@ class NavierStokesSolver:
                 )
             )
 
-            # reinforce neumann conditions
-            ''' WE ARE GOING TO HAVE TO CHANGE THIS TO HANDLE BOUNDARIES'''
-            self.p[0, :] = self.p[1, :]  # left
-            self.p[-1, :] = self.p[-2, :]  # right
-            self.p[:, 0] = self.p[:, 1]  # bottom
-            self.p[:, -1] = self.p[:, -2]  # top
+            # reinforce neumann conditions for walls, open otherwise
+            self.p[0, self.boundary_mesh[0, :]] = self.p[1, self.boundary_mesh[0, :]]
+            self.p[-1, self.boundary_mesh[-1, :]] = self.p[-2, self.boundary_mesh[-1, :]]
+            self.p[self.boundary_mesh[:, 0], 0] = self.p[self.boundary_mesh[:, 0], 1]
+            self.p[self.boundary_mesh[:, -1], -1] = self.p[self.boundary_mesh[:, -1], -2]
 
             tol = sl.norm(self.p - p_old) / np.maximum(1.0e-10, sl.norm(self.p))
 
@@ -156,12 +153,25 @@ class NavierStokesSolver:
         )
 
         # apply boundary conditions
-        ''' WE ARE GOING TO HAVE TO CHANGE THIS TO HANDLE BOUNDARIES'''
-        self.u[0, :], self.u[-1, :] = 0, 0
-        self.u[:, 0], self.u[:, -1] = 0, 0
-        self.v[0, :], self.v[-1, :] = 0, 0
-        self.v[:, 0], self.v[:, -1] = 0, 0
 
+        # dirichlet for walls 
+        self.u[0, self.boundary_mesh[0, :]] = 0
+        self.u[-1, self.boundary_mesh[-1, :]] = 0
+        
+        self.v[self.boundary_mesh[:, 0], 0] = 0
+        self.v[self.boundary_mesh[:, -1], -1] = 0
+
+        # neumann for open boundaries
+        self.u[0, ~self.boundary_mesh[0, :]] = self.u[1, ~self.boundary_mesh[0, :]]
+        self.u[-1, ~self.boundary_mesh[-1, :]] = self.u[-2, ~self.boundary_mesh[-1, :]]
+        self.v[0, ~self.boundary_mesh[0, :]] = 0.0
+        self.v[-1, ~self.boundary_mesh[-1, :]] = 0.0
+
+        self.v[~self.boundary_mesh[:, 0], 0] = self.v[~self.boundary_mesh[:, 0], 1]
+        self.v[~self.boundary_mesh[:, -1], -1] = self.v[~self.boundary_mesh[:, -1], -2]
+        self.u[~self.boundary_mesh[:, 0], 0] = 0.0
+        self.u[~self.boundary_mesh[:, -1], -1] = 0.0
+        
         return self.u, self.v
 
     def calculate_intermediate_velocity(
