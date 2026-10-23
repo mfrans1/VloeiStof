@@ -10,6 +10,8 @@ def solver():
     nx, ny = 21, 21
     lx, ly = 2.0, 2.0
 
+    boundary_mesh = np.ones((nx, ny), dtype=bool)
+
     u = np.zeros((nx, ny))
     v = np.zeros((nx, ny))
     p = np.zeros((nx, ny))
@@ -25,6 +27,7 @@ def solver():
         Ly=ly,
         Nx=nx,
         Ny=ny,
+        boundary_mesh=boundary_mesh,
     )
 
 

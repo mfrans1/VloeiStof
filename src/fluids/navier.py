@@ -54,7 +54,7 @@ class NavierStokesSolver:
         self.dy = Ly / (Ny - 1)
 
         # calculate theoretical max velocity to inform timestep
-        self.v_max = Pmax * (min(Lx, Ly)**2) / (8 * rho * nu * max(Lx, Ly))
+        self.v_max = Pmax * (min(Lx, Ly) ** 2) / (8 * rho * nu * max(Lx, Ly))
         self.dt = courant_max * min(self.dx, self.dy) / self.v_max
 
     def calculate_courant_number(self) -> float:
@@ -105,9 +105,13 @@ class NavierStokesSolver:
 
             # reinforce neumann conditions for walls, open otherwise
             self.p[0, self.boundary_mesh[0, :]] = self.p[1, self.boundary_mesh[0, :]]
-            self.p[-1, self.boundary_mesh[-1, :]] = self.p[-2, self.boundary_mesh[-1, :]]
+            self.p[-1, self.boundary_mesh[-1, :]] = self.p[
+                -2, self.boundary_mesh[-1, :]
+            ]
             self.p[self.boundary_mesh[:, 0], 0] = self.p[self.boundary_mesh[:, 0], 1]
-            self.p[self.boundary_mesh[:, -1], -1] = self.p[self.boundary_mesh[:, -1], -2]
+            self.p[self.boundary_mesh[:, -1], -1] = self.p[
+                self.boundary_mesh[:, -1], -2
+            ]
 
             tol = sl.norm(self.p - p_old) / np.maximum(1.0e-10, sl.norm(self.p))
 
@@ -154,10 +158,10 @@ class NavierStokesSolver:
 
         # apply boundary conditions
 
-        # dirichlet for walls 
+        # dirichlet for walls
         self.u[0, self.boundary_mesh[0, :]] = 0
         self.u[-1, self.boundary_mesh[-1, :]] = 0
-        
+
         self.v[self.boundary_mesh[:, 0], 0] = 0
         self.v[self.boundary_mesh[:, -1], -1] = 0
 
@@ -171,7 +175,7 @@ class NavierStokesSolver:
         self.v[~self.boundary_mesh[:, -1], -1] = self.v[~self.boundary_mesh[:, -1], -2]
         self.u[~self.boundary_mesh[:, 0], 0] = 0.0
         self.u[~self.boundary_mesh[:, -1], -1] = 0.0
-        
+
         return self.u, self.v
 
     def calculate_intermediate_velocity(
@@ -283,9 +287,7 @@ class NavierStokesSolver:
                 print(
                     f"norm(u) = {sl.norm(self.u):.8f}, norm(v) = {sl.norm(self.v):.8f}"
                 )
-                print(
-                    f"Courant number: {self.calculate_courant_number():.8f}"
-                )
+                print(f"Courant number: {self.calculate_courant_number():.8f}")
 
                 # save current state to a file
                 np.savez(
@@ -305,9 +307,7 @@ class NavierStokesSolver:
                 print(
                     f"norm(u) = {sl.norm(self.u):.8f}, norm(v) = {sl.norm(self.v):.8f}"
                 )
-                print(
-                    f"Courant number: {self.calculate_courant_number():.8f}"
-                )
+                print(f"Courant number: {self.calculate_courant_number():.8f}")
                 break
 
             # swap pointers without copying data
