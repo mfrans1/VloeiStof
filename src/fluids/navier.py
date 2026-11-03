@@ -2,6 +2,7 @@ import numpy as np
 import scipy.linalg as sl
 from numpy.typing import NDArray
 
+import fluids.pressure_poisson as pp
 
 class NavierStokesSolver:
     """Class for solving the 2D incompressible navier stokes equations for a given
@@ -70,54 +71,19 @@ class NavierStokesSolver:
         method, assuming a horizontal and vertical resolution of dx and dy
         respectively. Using right hand side given as RHS, and assuming
         NEUMANN conditions at the boundaries.
-
-        Args:
-            RHS (NDArray): Right hand side of the equation
-        Returns:
-            NDArray: Pressure field after the Jacobi iterations converge.
         """
 
-        tol = np.inf
+        max_iters = 100000
 
-        itrs = 0  # iterations counter
-        max_iters = 100000  # maximum iterations
-
-        p_old = self.p.copy()
-        p_diff = np.empty_like(self.p)
-
-        ratio = 1.0 / (2.0 + 2.0 * (self.dx**2) / (self.dy**2))
-
-        while tol > self.rtol and itrs < max_iters:
-            itrs += 1
-
-            p_old, self.p = self.p, p_old
-
-            # discretized jacobi solver
-            self.p[1:-1, 1:-1] = (
-                ratio
-                * (
-                    p_old[2:, 1:-1]
-                    + p_old[:-2, 1:-1]
-                    + (p_old[1:-1, 2:] + p_old[1:-1, :-2]) * (self.dx**2) / (self.dy**2)
-                    - (self.dx**2) * RHS[1:-1, 1:-1]
-                )
-            )
-
-            # reinforce neumann conditions for walls, open otherwise
-            self.p[0, self.boundary_mesh[0, :]] = self.p[1, self.boundary_mesh[0, :]]
-            self.p[-1, self.boundary_mesh[-1, :]] = self.p[
-                -2, self.boundary_mesh[-1, :]
-            ]
-            self.p[self.boundary_mesh[:, 0], 0] = self.p[self.boundary_mesh[:, 0], 1]
-            self.p[self.boundary_mesh[:, -1], -1] = self.p[
-                self.boundary_mesh[:, -1], -2
-            ]
-            np.subtract(self.p, p_old, out=p_diff)
-
-            numerator = np.einsum("ij,ij->", p_diff, p_diff)
-            denominator = np.einsum("ij,ij->", self.p, self.p)
-
-            tol = np.sqrt(numerator / max(denominator, 1e-20))
+        self.p, itrs, tol = pp.jacobi_solver(
+            self.p,
+            RHS,
+            self.boundary_mesh,
+            self.dx,
+            self.dy,
+            self.rtol,
+            max_iters,
+        )
 
         if self.logs:
             print(f"PPE solve iterations = {itrs:4d}")
