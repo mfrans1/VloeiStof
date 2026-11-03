@@ -5,6 +5,7 @@ from numpy.typing import NDArray
 import fluids.pressure_poisson as pp
 import fluids.velocity as vel
 
+
 class NavierStokesSolver:
     """Class for solving the 2D incompressible navier stokes equations for a given
     sized domain. Resolution defined by the user and informs the timestep using

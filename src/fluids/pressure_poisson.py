@@ -1,5 +1,6 @@
-import numpy as np
 import numba
+import numpy as np
+
 
 # extract the numerics into its own function and use numba
 @numba.njit

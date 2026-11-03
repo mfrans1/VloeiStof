@@ -1,6 +1,5 @@
-import numpy as np
 import numba
-from numpy.typing import NDArray
+
 
 @numba.njit
 def project_velocity(
