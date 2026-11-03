@@ -8,8 +8,8 @@ import fluids.velocity as vel
 
 class NavierStokesSolver:
     """Class for solving the 2D incompressible navier stokes equations for a given
-    sized domain. Resolution defined by the user and informs the timestep using
-    the courant friedrich lewy condition.
+    sized domain. The timestep is adapted every step from the advective (CFL)
+    and viscous stability limits.
     """
 
     def __init__(
@@ -25,11 +25,24 @@ class NavierStokesSolver:
         Ly: float,
         Nx: int,
         Ny: int,
-        courant_max: float = 0.005,
+        # standard args
+        courant_max: float = 0.5,
+        dt_max: float = 1e-3,
+        viscous_safety: float = 0.9,
+        dt_growth: float = 1.1,
+        dt_floor: float = 1e-12,
         rtol: float = 1e-5,
         logs: bool = False,
     ):
-        """Initialize the solver with parameters."""
+        """Initialize the solver with parameters.
+
+        Args:
+            courant_max: target CFL number for the advective limit (< 1).
+            dt_max: hard upper bound on the timestep.
+            viscous_safety: fraction of the explicit-diffusion stability limit to use.
+            dt_growth: max factor dt may grow by from one step to the next.
+            dt_floor: abort if dt drops below this (the run is blowing up).
+        """
         # setting external params
         self.rtol = rtol
         self.logs = logs
@@ -52,21 +65,59 @@ class NavierStokesSolver:
         self.Nx = Nx
         self.Ny = Ny
 
-        # deriving resolution and
         self.dx = Lx / (Nx - 1)
         self.dy = Ly / (Ny - 1)
 
-        # calculate theoretical max velocity to inform timestep
+        # timestep control parameters
+        self.courant_max = courant_max
+        self.dt_max = dt_max
+        self.dt_growth = dt_growth
+        self.dt_floor = dt_floor
+
+        # viscous (explicit diffusion) limit: dt <= 1 / (2 nu (1/dx^2 + 1/dy^2)).
+        self.dt_visc = viscous_safety / (
+            2.0 * nu * (1.0 / self.dx**2 + 1.0 / self.dy**2)
+        )
+
+        # theoretical (Poiseuille) max velocity
         self.v_max = Pmax * (min(Lx, Ly) ** 2) / (8 * rho * nu * max(Lx, Ly))
-        self.dt = courant_max * min(self.dx, self.dy) / self.v_max
+        dt_adv0 = (
+            courant_max * min(self.dx, self.dy) / self.v_max
+            if self.v_max > 0
+            else np.inf
+        )
+        self.dt = min(dt_adv0, self.dt_visc, dt_max)
+
+        self._dt_stable = self.dt
+
+    def compute_dt(self) -> float:
+        """Stable timestep for the current velocity field.
+
+        Uses the 2D advective CFL condition dt * (|u|/dx + |v|/dy) <= C,
+        the explicit viscous limit, a hard cap, and a growth limiter.
+        """
+        adv_rate = np.max(np.abs(self.u)) / self.dx + np.max(np.abs(self.v)) / self.dy
+        dt_adv = self.courant_max / adv_rate if adv_rate > 0 else np.inf
+
+        dt = min(dt_adv, self.dt_visc, self.dt_max, self.dt_growth * self._dt_stable)
+
+        if not np.isfinite(dt) or dt < self.dt_floor:
+            raise RuntimeError(
+                f"Timestep collapsed to {dt:.3e}; the solution is likely diverging "
+                f"(max|u| = {np.max(np.abs(self.u)):.3e}, "
+                f"max|v| = {np.max(np.abs(self.v)):.3e})."
+            )
+        return dt
 
     def calculate_courant_number(self) -> float:
-        """Calculate the courant number for the current velocity field.
+        """Calculate the courant number for the current velocity field and dt.
 
         Returns:
             float: Courant number
         """
-        return np.max(np.sqrt(self.u**2 + self.v**2)) * self.dt / min(self.dx, self.dy)
+        return self.dt * (
+            np.max(np.abs(self.u)) / self.dx + np.max(np.abs(self.v)) / self.dy
+        )
 
     def pressure_poisson_jacobi(self, RHS: NDArray) -> NDArray:
         """Solve the pressure poisson equation using jacobi iterative
@@ -138,6 +189,9 @@ class NavierStokesSolver:
             self.dy,
         )
 
+        # current max speed (diagnostic only; dt comes from compute_dt)
+        self.v_max = float(np.max(np.sqrt(self.u**2 + self.v**2)))
+
         return self.u, self.v
 
     def calculate_intermediate_velocity(
@@ -159,51 +213,72 @@ class NavierStokesSolver:
             tuple[NDArray, NDArray]: updated u- and v-velocities
         """
         self.u, self.v = vel.calculate_intermediate_velocity(
-        self.u,
-        self.v,
-        u_old,
-        v_old,
-        self.dt,
-        self.nu,
-        self.dx,
-        self.dy)
-        
-        return self.u, self.v
+            self.u,
+            self.v,
+            u_old,
+            v_old,
+            self.dt,
+            self.nu,
+            self.dx,
+            self.dy,
+        )
 
+        return self.u, self.v
 
     def solve_NS(
         self,
         t_end: float,
         output: bool = False,
-        output_freq: int = 5,
+        output_dt: float = 0.1,
         output_dir: str = "./output",
+        steady_tol: float = 1e-4,
     ) -> tuple[NDArray, NDArray, NDArray]:
-        """Solve the incompressible Navier-Stokes equations
+        """Solve the incompressible Navier-Stokes equations with adaptive dt.
 
         Args:
             t_end (float): end of integration
             output (bool): output flag
-            output_freq (int): output frequency
+            output_dt (float): simulation-time interval between saved snapshots
             output_dir (str): directory for output files
+            steady_tol (float): steady-state tolerance on the relative velocity change
         Returns:
             tuple(NDArray, NDArray, NDArray): u-, v-velocity and pressure field
         """
-        t = 0
+        t = 0.0
+        step = 0
+        out_idx = 0
+        next_output = output_dt
 
         u_old = self.u.copy()
         v_old = self.v.copy()
         p_RHS = np.zeros_like(self.u)
 
-        du = np.empty_like(self.u)
-        dv = np.empty_like(self.v)
+        du = self.u.copy()
+        dv = self.v.copy()
 
-        n_steps = int(np.ceil(t_end / self.dt))
+        if output:
+            # save initial state
+            np.savez(
+                f"{output_dir}/navier_{out_idx:05d}.npz",
+                u=self.u, v=self.v, p=self.p, t=t, dt=self.dt, step=step,
+            )
+            out_idx += 1
 
-        for step in range(1, n_steps + 1):
-            t = step * self.dt
+        while t < t_end - 1e-12 * t_end:
+            self.u, self.v = u_old, v_old
+            dt = self.compute_dt()
+            self._dt_stable = dt
 
-            if self.logs:
-                print(f"\nTime = {t:.8f}")
+            t_stop = min(next_output, t_end) if output else t_end
+            remaining = t_stop - t
+            if dt >= remaining:
+                dt = remaining
+            elif dt > 0.5 * remaining:
+                dt = 0.5 * remaining
+
+            self.dt = dt
+            self.u, self.v = du, dv
+            step += 1
 
             # calculate intermediate velocities
             self.u, self.v = self.calculate_intermediate_velocity(u_old, v_old)
@@ -217,43 +292,44 @@ class NavierStokesSolver:
             # project velocity
             self.u, self.v = self.project_velocity()
 
-            if self.logs and output and step % output_freq == 0:
-                print(
-                    f"norm(u) = {sl.norm(self.u):.8f}, norm(v) = {sl.norm(self.v):.8f}"
-                )
-                print(f"Courant number: {self.calculate_courant_number():.8f}")
+            t += dt
 
-                # save current state to a file
-                np.savez(
-                    f"{output_dir}/navier_{step:05d}.npz", u=self.u, v=self.v, p=self.p
-                )
-
-            # if the residuals in velocities between new and old are sufficiently small,
-            # we can say we have reached steady state, as needed
-            np.subtract(self.u, u_old, out=du)
-            np.subtract(self.v, v_old, out=dv)
-
-            res_u = np.linalg.norm(du) / (np.linalg.norm(self.u) + 1e-10)
-            res_v = np.linalg.norm(dv) / (np.linalg.norm(self.v) + 1e-10)
-            
             if self.logs:
-                print(f"velocity residual = {res_u + res_v}")
-
-            if np.sqrt(res_u**2 + res_v**2) < 1e-7:
-                print(f"Flow achieved steady state at t = {t:.2f}s")
-                print(f"velocity residual = {res_u + res_v}")
+                print(f"\nStep {step}, t = {t:.8f}, dt = {dt:.3e}")
                 print(
                     f"norm(u) = {sl.norm(self.u):.8f}, norm(v) = {sl.norm(self.v):.8f}"
                 )
                 print(f"Courant number: {self.calculate_courant_number():.8f}")
-                break
+                print(f"Maximum velocity: {self.v_max:.8f}")
 
-            # swap pointers without copying data
-            temp = u_old
-            u_old = self.u
-            self.u = temp
+            if output and t >= next_output - 1e-12 * max(1.0, next_output):
+                # save current state to a file, with its simulation time
+                np.savez(
+                    f"{output_dir}/navier_{out_idx:05d}.npz",
+                    u=self.u, v=self.v, p=self.p, t=t, dt=dt, step=step,
+                )
+                out_idx += 1
+                next_output += output_dt
 
-            temp = v_old
-            v_old = self.v
-            self.v = temp
+            res_u = sl.norm(self.u - u_old) / ((sl.norm(self.u) + 1e-10) * dt)
+            res_v = sl.norm(self.v - v_old) / ((sl.norm(self.v) + 1e-10) * dt)
+            res = np.sqrt(res_u**2 + res_v**2)
+
+            if self.logs:
+                print(f"velocity residual (per unit time) = {res:.3e}")
+
+            if res < steady_tol:
+                # exit early if the solution has reached a steady state
+                print(f"Flow achieved steady state at t = {t:.4f}s (step {step})")
+                print(f"velocity residual = {res:.3e}")
+                print(
+                    f"norm(u) = {sl.norm(self.u):.8f}, norm(v) = {sl.norm(self.v):.8f}"
+                )
+                print(f"Courant number: {self.calculate_courant_number():.8f}")
+                return self.u, self.v, self.p
+
+            u_old, du = self.u, u_old
+            v_old, dv = self.v, v_old
+
+        self.u, self.v = u_old, v_old
         return self.u, self.v, self.p
