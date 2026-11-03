@@ -113,7 +113,6 @@ class NavierStokesSolver:
             self.p[self.boundary_mesh[:, -1], -1] = self.p[
                 self.boundary_mesh[:, -1], -2
             ]
-
             np.subtract(self.p, p_old, out=p_diff)
 
             numerator = np.einsum("ij,ij->", p_diff, p_diff)
@@ -190,6 +189,7 @@ class NavierStokesSolver:
 
         return self.u, self.v
 
+    
     def calculate_intermediate_velocity(
         self,
         u_old: NDArray,
@@ -209,19 +209,24 @@ class NavierStokesSolver:
             tuple[NDArray, NDArray]: updated u- and v-velocities
         """
         # calculate u-component
-        u_advection = u_old[1:-1, 1:-1] * np.select(
-            [u_old[1:-1, 1:-1] > 0, u_old[1:-1, 1:-1] < 0],
-            [
-                np.diff(u_old[:-1, 1:-1], n=1, axis=0) / self.dx,
+        u_advection = u_old[1:-1, 1:-1] * np.where(
+            u_old[1:-1, 1:-1] > 0,
+            np.diff(u_old[:-1, 1:-1], n=1, axis=0) / self.dx,
+            np.where(
+                u_old[1:-1, 1:-1] < 0,
                 np.diff(u_old[1:, 1:-1], n=1, axis=0) / self.dx,
-            ],
-        ) + v_old[1:-1, 1:-1] * np.select(
-            [v_old[1:-1, 1:-1] > 0, v_old[1:-1, 1:-1] < 0],
-            [
-                np.diff(u_old[1:-1, :-1], n=1, axis=1) / self.dy,
+                0.0,
+            ),
+        ) + v_old[1:-1, 1:-1] * np.where(
+            v_old[1:-1, 1:-1] > 0,
+            np.diff(u_old[1:-1, :-1], n=1, axis=1) / self.dy,
+            np.where(
+                v_old[1:-1, 1:-1] < 0,
                 np.diff(u_old[1:-1, 1:], n=1, axis=1) / self.dy,
-            ],
+                0.0,
+            ),
         )
+
         u_diffusion = self.nu * (
             np.diff(u_old[:, 1:-1], n=2, axis=0) / (self.dx**2)
             + np.diff(u_old[1:-1, :], n=2, axis=1) / (self.dy**2)
@@ -230,19 +235,24 @@ class NavierStokesSolver:
         self.u[1:-1, 1:-1] = u_old[1:-1, 1:-1] + self.dt * (u_diffusion - u_advection)
 
         # calculate v-component
-        v_advection = u_old[1:-1, 1:-1] * np.select(
-            [u_old[1:-1, 1:-1] > 0, u_old[1:-1, 1:-1] < 0],
-            [
-                np.diff(v_old[:-1, 1:-1], n=1, axis=0) / self.dx,
+        v_advection = u_old[1:-1, 1:-1] * np.where(
+            u_old[1:-1, 1:-1] > 0,
+            np.diff(v_old[:-1, 1:-1], n=1, axis=0) / self.dx,
+            np.where(
+                u_old[1:-1, 1:-1] < 0,
                 np.diff(v_old[1:, 1:-1], n=1, axis=0) / self.dx,
-            ],
-        ) + v_old[1:-1, 1:-1] * np.select(
-            [v_old[1:-1, 1:-1] > 0, v_old[1:-1, 1:-1] < 0],
-            [
-                np.diff(v_old[1:-1, :-1], n=1, axis=1) / self.dy,
+                0.0,
+            ),
+        ) + v_old[1:-1, 1:-1] * np.where(
+            v_old[1:-1, 1:-1] > 0,
+            np.diff(v_old[1:-1, :-1], n=1, axis=1) / self.dy,
+            np.where(
+                v_old[1:-1, 1:-1] < 0,
                 np.diff(v_old[1:-1, 1:], n=1, axis=1) / self.dy,
-            ],
+                0.0,
+            ),
         )
+
         v_diffusion = self.nu * (
             np.diff(v_old[:, 1:-1], n=2, axis=0) / (self.dx**2)
             + np.diff(v_old[1:-1, :], n=2, axis=1) / (self.dy**2)
@@ -251,6 +261,7 @@ class NavierStokesSolver:
         self.v[1:-1, 1:-1] = v_old[1:-1, 1:-1] + self.dt * (v_diffusion - v_advection)
 
         return self.u, self.v
+
 
     def solve_NS(
         self,
