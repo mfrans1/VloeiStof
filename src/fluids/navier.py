@@ -65,7 +65,6 @@ class NavierStokesSolver:
         """
         return np.max(np.sqrt(self.u**2 + self.v**2)) * self.dt / min(self.dx, self.dy)
 
-
     def pressure_poisson_jacobi(self, RHS: NDArray) -> NDArray:
         """Solve the pressure poisson equation using jacobi iterative
         method, assuming a horizontal and vertical resolution of dx and dy
@@ -189,7 +188,6 @@ class NavierStokesSolver:
 
         return self.u, self.v
 
-    
     def calculate_intermediate_velocity(
         self,
         u_old: NDArray,
@@ -286,6 +284,9 @@ class NavierStokesSolver:
         v_old = self.v.copy()
         p_RHS = np.zeros_like(self.u)
 
+        du = np.empty_like(self.u)
+        dv = np.empty_like(self.v)
+
         n_steps = int(np.ceil(t_end / self.dt))
 
         for step in range(1, n_steps + 1):
@@ -319,8 +320,12 @@ class NavierStokesSolver:
 
             # if the residuals in velocities between new and old are sufficiently small,
             # we can say we have reached steady state, as needed
-            res_u = np.linalg.norm(self.u - u_old) / (np.linalg.norm(self.u) + 1e-10)
-            res_v = np.linalg.norm(self.v - v_old) / (np.linalg.norm(self.v) + 1e-10)
+            np.subtract(self.u, u_old, out=du)
+            np.subtract(self.v, v_old, out=dv)
+
+            res_u = np.linalg.norm(du) / (np.linalg.norm(self.u) + 1e-10)
+            res_v = np.linalg.norm(dv) / (np.linalg.norm(self.v) + 1e-10)
+            
             if self.logs:
                 print(f"velocity residual = {res_u + res_v}")
 
