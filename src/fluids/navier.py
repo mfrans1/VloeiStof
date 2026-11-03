@@ -65,6 +65,7 @@ class NavierStokesSolver:
         """
         return np.max(np.sqrt(self.u**2 + self.v**2)) * self.dt / min(self.dx, self.dy)
 
+
     def pressure_poisson_jacobi(self, RHS: NDArray) -> NDArray:
         """Solve the pressure poisson equation using jacobi iterative
         method, assuming a horizontal and vertical resolution of dx and dy
@@ -77,24 +78,24 @@ class NavierStokesSolver:
             NDArray: Pressure field after the Jacobi iterations converge.
         """
 
-        tol = 10.0 * self.rtol
+        tol = np.inf
 
         itrs = 0  # iterations counter
+        max_iters = 100000  # maximum iterations
 
-        p_old = np.copy(self.p)  # deep copy
+        p_old = self.p.copy()
+        p_diff = np.empty_like(self.p)
 
-        while tol > self.rtol:
+        ratio = 1.0 / (2.0 + 2.0 * (self.dx**2) / (self.dy**2))
+
+        while tol > self.rtol and itrs < max_iters:
             itrs += 1
 
-            # swap the arrays
-            temp = p_old
-            p_old = self.p
-            self.p = temp
+            p_old, self.p = self.p, p_old
 
             # discretized jacobi solver
             self.p[1:-1, 1:-1] = (
-                1.0
-                / (2.0 + 2.0 * (self.dx**2) / (self.dy**2))
+                ratio
                 * (
                     p_old[2:, 1:-1]
                     + p_old[:-2, 1:-1]
@@ -113,10 +114,21 @@ class NavierStokesSolver:
                 self.boundary_mesh[:, -1], -2
             ]
 
-            tol = sl.norm(self.p - p_old) / np.maximum(1.0e-10, sl.norm(self.p))
+            np.subtract(self.p, p_old, out=p_diff)
+
+            numerator = np.einsum("ij,ij->", p_diff, p_diff)
+            denominator = np.einsum("ij,ij->", self.p, self.p)
+
+            tol = np.sqrt(numerator / max(denominator, 1e-20))
 
         if self.logs:
             print(f"PPE solve iterations = {itrs:4d}")
+
+        if itrs == max_iters and tol > self.rtol:
+            raise RuntimeError(
+                f"Pressure solver did not converge after {max_iters} iterations. "
+                f"Residual = {tol:.3e}"
+            )
 
         return self.p
 
