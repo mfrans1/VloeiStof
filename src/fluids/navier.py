@@ -3,6 +3,7 @@ import scipy.linalg as sl
 from numpy.typing import NDArray
 
 import fluids.pressure_poisson as pp
+import fluids.velocity as vel
 
 class NavierStokesSolver:
     """Class for solving the 2D incompressible navier stokes equations for a given
@@ -125,32 +126,16 @@ class NavierStokesSolver:
         Returns:
             tuple[NDArray, NDArray]: u-velocity and v-velocity
         """
-        self.u[1:-1, 1:-1] = self.u[1:-1, 1:-1] - self.dt * (1 / self.rho) * (
-            (self.p[2:, 1:-1] - self.p[:-2, 1:-1]) / (2 * self.dx)
+        self.u, self.v = vel.project_velocity(
+            self.u,
+            self.v,
+            self.p,
+            self.boundary_mesh,
+            self.dt,
+            self.rho,
+            self.dx,
+            self.dy,
         )
-        self.v[1:-1, 1:-1] = self.v[1:-1, 1:-1] - self.dt * (1 / self.rho) * (
-            (self.p[1:-1, 2:] - self.p[1:-1, :-2]) / (2 * self.dy)
-        )
-
-        # apply boundary conditions
-
-        # dirichlet for walls
-        self.u[0, self.boundary_mesh[0, :]] = 0
-        self.u[-1, self.boundary_mesh[-1, :]] = 0
-
-        self.v[self.boundary_mesh[:, 0], 0] = 0
-        self.v[self.boundary_mesh[:, -1], -1] = 0
-
-        # neumann for open boundaries
-        self.u[0, ~self.boundary_mesh[0, :]] = self.u[1, ~self.boundary_mesh[0, :]]
-        self.u[-1, ~self.boundary_mesh[-1, :]] = self.u[-2, ~self.boundary_mesh[-1, :]]
-        self.v[0, ~self.boundary_mesh[0, :]] = 0.0
-        self.v[-1, ~self.boundary_mesh[-1, :]] = 0.0
-
-        self.v[~self.boundary_mesh[:, 0], 0] = self.v[~self.boundary_mesh[:, 0], 1]
-        self.v[~self.boundary_mesh[:, -1], -1] = self.v[~self.boundary_mesh[:, -1], -2]
-        self.u[~self.boundary_mesh[:, 0], 0] = 0.0
-        self.u[~self.boundary_mesh[:, -1], -1] = 0.0
 
         return self.u, self.v
 
@@ -172,58 +157,16 @@ class NavierStokesSolver:
         Returns:
             tuple[NDArray, NDArray]: updated u- and v-velocities
         """
-        # calculate u-component
-        u_advection = u_old[1:-1, 1:-1] * np.where(
-            u_old[1:-1, 1:-1] > 0,
-            np.diff(u_old[:-1, 1:-1], n=1, axis=0) / self.dx,
-            np.where(
-                u_old[1:-1, 1:-1] < 0,
-                np.diff(u_old[1:, 1:-1], n=1, axis=0) / self.dx,
-                0.0,
-            ),
-        ) + v_old[1:-1, 1:-1] * np.where(
-            v_old[1:-1, 1:-1] > 0,
-            np.diff(u_old[1:-1, :-1], n=1, axis=1) / self.dy,
-            np.where(
-                v_old[1:-1, 1:-1] < 0,
-                np.diff(u_old[1:-1, 1:], n=1, axis=1) / self.dy,
-                0.0,
-            ),
-        )
-
-        u_diffusion = self.nu * (
-            np.diff(u_old[:, 1:-1], n=2, axis=0) / (self.dx**2)
-            + np.diff(u_old[1:-1, :], n=2, axis=1) / (self.dy**2)
-        )
-
-        self.u[1:-1, 1:-1] = u_old[1:-1, 1:-1] + self.dt * (u_diffusion - u_advection)
-
-        # calculate v-component
-        v_advection = u_old[1:-1, 1:-1] * np.where(
-            u_old[1:-1, 1:-1] > 0,
-            np.diff(v_old[:-1, 1:-1], n=1, axis=0) / self.dx,
-            np.where(
-                u_old[1:-1, 1:-1] < 0,
-                np.diff(v_old[1:, 1:-1], n=1, axis=0) / self.dx,
-                0.0,
-            ),
-        ) + v_old[1:-1, 1:-1] * np.where(
-            v_old[1:-1, 1:-1] > 0,
-            np.diff(v_old[1:-1, :-1], n=1, axis=1) / self.dy,
-            np.where(
-                v_old[1:-1, 1:-1] < 0,
-                np.diff(v_old[1:-1, 1:], n=1, axis=1) / self.dy,
-                0.0,
-            ),
-        )
-
-        v_diffusion = self.nu * (
-            np.diff(v_old[:, 1:-1], n=2, axis=0) / (self.dx**2)
-            + np.diff(v_old[1:-1, :], n=2, axis=1) / (self.dy**2)
-        )
-
-        self.v[1:-1, 1:-1] = v_old[1:-1, 1:-1] + self.dt * (v_diffusion - v_advection)
-
+        self.u, self.v = vel.calculate_intermediate_velocity(
+        self.u,
+        self.v,
+        u_old,
+        v_old,
+        self.dt,
+        self.nu,
+        self.dx,
+        self.dy)
+        
         return self.u, self.v
 
 
