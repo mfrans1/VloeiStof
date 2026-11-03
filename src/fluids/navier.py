@@ -2,6 +2,8 @@ import numpy as np
 import scipy.linalg as sl
 from numpy.typing import NDArray
 
+import fluids.pressure_poisson as pp
+import fluids.velocity as vel
 
 class NavierStokesSolver:
     """Class for solving the 2D incompressible navier stokes equations for a given
@@ -70,53 +72,28 @@ class NavierStokesSolver:
         method, assuming a horizontal and vertical resolution of dx and dy
         respectively. Using right hand side given as RHS, and assuming
         NEUMANN conditions at the boundaries.
-
-        Args:
-            RHS (NDArray): Right hand side of the equation
-        Returns:
-            NDArray: Pressure field after the Jacobi iterations converge.
         """
 
-        tol = 10.0 * self.rtol
+        max_iters = 100000
 
-        itrs = 0  # iterations counter
-
-        p_old = np.copy(self.p)  # deep copy
-
-        while tol > self.rtol:
-            itrs += 1
-
-            # swap the arrays
-            temp = p_old
-            p_old = self.p
-            self.p = temp
-
-            # discretized jacobi solver
-            self.p[1:-1, 1:-1] = (
-                1.0
-                / (2.0 + 2.0 * (self.dx**2) / (self.dy**2))
-                * (
-                    p_old[2:, 1:-1]
-                    + p_old[:-2, 1:-1]
-                    + (p_old[1:-1, 2:] + p_old[1:-1, :-2]) * (self.dx**2) / (self.dy**2)
-                    - (self.dx**2) * RHS[1:-1, 1:-1]
-                )
-            )
-
-            # reinforce neumann conditions for walls, open otherwise
-            self.p[0, self.boundary_mesh[0, :]] = self.p[1, self.boundary_mesh[0, :]]
-            self.p[-1, self.boundary_mesh[-1, :]] = self.p[
-                -2, self.boundary_mesh[-1, :]
-            ]
-            self.p[self.boundary_mesh[:, 0], 0] = self.p[self.boundary_mesh[:, 0], 1]
-            self.p[self.boundary_mesh[:, -1], -1] = self.p[
-                self.boundary_mesh[:, -1], -2
-            ]
-
-            tol = sl.norm(self.p - p_old) / np.maximum(1.0e-10, sl.norm(self.p))
+        self.p, itrs, tol = pp.jacobi_solver(
+            self.p,
+            RHS,
+            self.boundary_mesh,
+            self.dx,
+            self.dy,
+            self.rtol,
+            max_iters,
+        )
 
         if self.logs:
             print(f"PPE solve iterations = {itrs:4d}")
+
+        if itrs == max_iters and tol > self.rtol:
+            raise RuntimeError(
+                f"Pressure solver did not converge after {max_iters} iterations. "
+                f"Residual = {tol:.3e}"
+            )
 
         return self.p
 
@@ -149,32 +126,16 @@ class NavierStokesSolver:
         Returns:
             tuple[NDArray, NDArray]: u-velocity and v-velocity
         """
-        self.u[1:-1, 1:-1] = self.u[1:-1, 1:-1] - self.dt * (1 / self.rho) * (
-            (self.p[2:, 1:-1] - self.p[:-2, 1:-1]) / (2 * self.dx)
+        self.u, self.v = vel.project_velocity(
+            self.u,
+            self.v,
+            self.p,
+            self.boundary_mesh,
+            self.dt,
+            self.rho,
+            self.dx,
+            self.dy,
         )
-        self.v[1:-1, 1:-1] = self.v[1:-1, 1:-1] - self.dt * (1 / self.rho) * (
-            (self.p[1:-1, 2:] - self.p[1:-1, :-2]) / (2 * self.dy)
-        )
-
-        # apply boundary conditions
-
-        # dirichlet for walls
-        self.u[0, self.boundary_mesh[0, :]] = 0
-        self.u[-1, self.boundary_mesh[-1, :]] = 0
-
-        self.v[self.boundary_mesh[:, 0], 0] = 0
-        self.v[self.boundary_mesh[:, -1], -1] = 0
-
-        # neumann for open boundaries
-        self.u[0, ~self.boundary_mesh[0, :]] = self.u[1, ~self.boundary_mesh[0, :]]
-        self.u[-1, ~self.boundary_mesh[-1, :]] = self.u[-2, ~self.boundary_mesh[-1, :]]
-        self.v[0, ~self.boundary_mesh[0, :]] = 0.0
-        self.v[-1, ~self.boundary_mesh[-1, :]] = 0.0
-
-        self.v[~self.boundary_mesh[:, 0], 0] = self.v[~self.boundary_mesh[:, 0], 1]
-        self.v[~self.boundary_mesh[:, -1], -1] = self.v[~self.boundary_mesh[:, -1], -2]
-        self.u[~self.boundary_mesh[:, 0], 0] = 0.0
-        self.u[~self.boundary_mesh[:, -1], -1] = 0.0
 
         return self.u, self.v
 
@@ -196,49 +157,18 @@ class NavierStokesSolver:
         Returns:
             tuple[NDArray, NDArray]: updated u- and v-velocities
         """
-        # calculate u-component
-        u_advection = u_old[1:-1, 1:-1] * np.select(
-            [u_old[1:-1, 1:-1] > 0, u_old[1:-1, 1:-1] < 0],
-            [
-                np.diff(u_old[:-1, 1:-1], n=1, axis=0) / self.dx,
-                np.diff(u_old[1:, 1:-1], n=1, axis=0) / self.dx,
-            ],
-        ) + v_old[1:-1, 1:-1] * np.select(
-            [v_old[1:-1, 1:-1] > 0, v_old[1:-1, 1:-1] < 0],
-            [
-                np.diff(u_old[1:-1, :-1], n=1, axis=1) / self.dy,
-                np.diff(u_old[1:-1, 1:], n=1, axis=1) / self.dy,
-            ],
-        )
-        u_diffusion = self.nu * (
-            np.diff(u_old[:, 1:-1], n=2, axis=0) / (self.dx**2)
-            + np.diff(u_old[1:-1, :], n=2, axis=1) / (self.dy**2)
-        )
-
-        self.u[1:-1, 1:-1] = u_old[1:-1, 1:-1] + self.dt * (u_diffusion - u_advection)
-
-        # calculate v-component
-        v_advection = u_old[1:-1, 1:-1] * np.select(
-            [u_old[1:-1, 1:-1] > 0, u_old[1:-1, 1:-1] < 0],
-            [
-                np.diff(v_old[:-1, 1:-1], n=1, axis=0) / self.dx,
-                np.diff(v_old[1:, 1:-1], n=1, axis=0) / self.dx,
-            ],
-        ) + v_old[1:-1, 1:-1] * np.select(
-            [v_old[1:-1, 1:-1] > 0, v_old[1:-1, 1:-1] < 0],
-            [
-                np.diff(v_old[1:-1, :-1], n=1, axis=1) / self.dy,
-                np.diff(v_old[1:-1, 1:], n=1, axis=1) / self.dy,
-            ],
-        )
-        v_diffusion = self.nu * (
-            np.diff(v_old[:, 1:-1], n=2, axis=0) / (self.dx**2)
-            + np.diff(v_old[1:-1, :], n=2, axis=1) / (self.dy**2)
-        )
-
-        self.v[1:-1, 1:-1] = v_old[1:-1, 1:-1] + self.dt * (v_diffusion - v_advection)
-
+        self.u, self.v = vel.calculate_intermediate_velocity(
+        self.u,
+        self.v,
+        u_old,
+        v_old,
+        self.dt,
+        self.nu,
+        self.dx,
+        self.dy)
+        
         return self.u, self.v
+
 
     def solve_NS(
         self,
@@ -262,6 +192,9 @@ class NavierStokesSolver:
         u_old = self.u.copy()
         v_old = self.v.copy()
         p_RHS = np.zeros_like(self.u)
+
+        du = np.empty_like(self.u)
+        dv = np.empty_like(self.v)
 
         n_steps = int(np.ceil(t_end / self.dt))
 
@@ -296,8 +229,12 @@ class NavierStokesSolver:
 
             # if the residuals in velocities between new and old are sufficiently small,
             # we can say we have reached steady state, as needed
-            res_u = np.linalg.norm(self.u - u_old) / (np.linalg.norm(self.u) + 1e-10)
-            res_v = np.linalg.norm(self.v - v_old) / (np.linalg.norm(self.v) + 1e-10)
+            np.subtract(self.u, u_old, out=du)
+            np.subtract(self.v, v_old, out=dv)
+
+            res_u = np.linalg.norm(du) / (np.linalg.norm(self.u) + 1e-10)
+            res_v = np.linalg.norm(dv) / (np.linalg.norm(self.v) + 1e-10)
+            
             if self.logs:
                 print(f"velocity residual = {res_u + res_v}")
 
