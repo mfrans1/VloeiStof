@@ -126,7 +126,7 @@ class NavierStokesSolver:
         NEUMANN conditions at the boundaries.
         """
 
-        max_iters = 100000
+        max_iters = 1000000
 
         self.p, itrs, tol = pp.jacobi_solver(
             self.p,
